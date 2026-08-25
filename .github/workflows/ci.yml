@@ -1,0 +1,23 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install deps
+        run: pip install cryptography pytest
+      - name: Syntax + bash check
+        run: |
+          python3 -m py_compile bootstrap.py railway_gql.py xui-reality-inbound.py xui-node-connector.py deploy.py xui-tcp-proxy-setup.py xui-link-maker.py
+          bash -n start.sh init_panels.sh run_all.sh
+      - name: Run tests
+        run: pytest test_autosetup.py -v

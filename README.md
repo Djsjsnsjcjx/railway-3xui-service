@@ -77,6 +77,10 @@ https://دامنه.up.railway.app/managepanel/
 
 ## 🔧 ساخت Inbound
 
+> **✨ خودکار (جدید):** از این نسخه به بعد، اگر `BOOTSTRAP=1` روی سرویس اول باشد، بعد از ساخت ۴ سرویس، `bootstrap.py` دامنه‌ها را جمع می‌کند، به همه سرویس‌ها `PANELS` و `BOOTSTRAP_READY=1` و `INIT_PANELS` می‌دهد، و روی سرویس اصلی (`INIT_PANELS=1`) خودش اینباند VLESS+Reality را روی همه پنل‌ها ساخته و نودها را به پنل اصلی وصل می‌کند (فایل `init_panels.sh`). با retry تا وقتی همه پنل‌ها بالا بیایند. نتیجه: **پنل دیگر خالی نمی‌ماند.**
+
+### ساخت دستی (اگر خواستی خودت بسازی)
+
 | فیلد | مقدار |
 |---|---|
 | Protocol | VLESS |
@@ -124,7 +128,9 @@ curl -I https://دامنه.up.railway.app/managepanel/
 | `nginx.conf.template` | reverse proxy: پنل (2053) + ساب (2096) + اینباند (8080-8089) |
 | `start.sh` | راه‌اندازی x-ui + ساخت nginx.conf با `$PORT` |
 | `deploy.py` | ساخت خودکار سرویس‌ها (ریجن + دامنه + ولوم) از بیرون با API |
-| `bootstrap.py` | خود-راه‌انداز داخل کانتینر (فقط با `BOOTSTRAP=1`) |
+| `bootstrap.py` | خود-راه‌انداز داخل کانتینر (فقط با `BOOTSTRAP=1`) — بعد از ساخت، PANELS را به همه سرویس‌ها می‌دهد |
+| `railway_gql.py` | توابع کمکی GraphQL (لیست/ست متغیرهای سرویس) |
+| `init_panels.sh` | ساخت خودکار اینباند + اتصال نودها روی پنل اصلی (INIT_PANELS=1) |
 | `xui-node-connector.py` | اتصال نودهای چند-ریجن به پنل مرکزی |
 | `xui-reality-inbound.py` | ساخت اینباند VLESS+Reality روی همه پنل‌ها |
 | `xui-link-maker.py` | ساخت لینک‌های اتصال درست (با TCP proxy) |

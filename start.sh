@@ -7,9 +7,6 @@ REGION_NAME="${REGION_NAME:-unknown}"
 echo "🚀 Starting X-UI + nginx reverse proxy [region: $REGION_NAME]..."
 
 # ── Bootstrap خودکار ─────────────────────────────────────
-# فقط سرویس اول (BOOTSTRAP=1) سرویس‌های چند-ریجن را می‌سازد.
-# سرویس‌هایی که bootstrap می‌سازد BOOTSTRAP=0 دارند → این بخش اجرا نمی‌شود
-# (جلوگیری از حلقه‌ی بی‌نهایت).
 if [ "${BOOTSTRAP:-0}" = "1" ]; then
     echo "🌍 Bootstrap mode: creating multi-region services..."
     python3 /app/bootstrap.py || echo "⚠️ bootstrap failed (continuing anyway)"
@@ -30,8 +27,17 @@ echo "▶️  Starting x-ui in background..."
 ./x-ui &
 X_UI_PID=$!
 
-sleep 2
-
-echo "▶️  Starting nginx in foreground on port $NGINX_PORT..."
+# آماده‌سازی nginx.conf قبل از تست
 nginx -t
+
+# ── Init panels (ساخت اینباند + نود) در background ──────
+# فقط زمانی اجرا می‌شود که پنل اصلی (INIT_PANELS=1) باشد؛ نودها و اینباندها
+# از راه دور روی همه‌ی پنل‌ها ساخته می‌شوند. init_panels.sh خودش retry دارد.
+if [ "${INIT_PANELS:-0}" = "1" ]; then
+    echo "⏱ init panels: زمان‌بندی ساخت اینباند+نود (بعد از بالا آمدن nginx)..."
+    # بعد از 10 ثانیه (تا nginx بالا بیاید) اجرا کن — ولی nginx را block نکن
+    ( sleep 10 && /start_scripts/init_panels.sh > /var/log/x-ui/init-panels.log 2>&1 ) &
+fi
+
+# nginx در foreground — ورودی اصلی فرایند را نگه می‌دارد
 exec nginx -g "daemon off;"

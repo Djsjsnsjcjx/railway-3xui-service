@@ -19,6 +19,8 @@ import os
 import sys
 import urllib.request
 
+from railway_gql import set_variables
+
 TOKEN = os.environ.get("RAILWAY_TOKEN", "")
 URL = "https://backboard.railway.com/graphql/v2"
 REPO = os.environ.get("REPO", "Djsjsnsjcjx/railway-3xui-service")
@@ -143,6 +145,35 @@ def create_volume(env_id, pid, svc_id, region):
     return d["data"]["volumeCreate"]["id"]
 
 
+def fetch_all_domains(env_id, service_ids):
+    """
+    واکشی دامنه‌ها برای سرویس‌هایی که id داریم.
+    service_ids: dict name -> service_id
+    برمی‌گرداند: dict name -> https://domain
+    """
+    out = {}
+    for name, sid in service_ids.items():
+        if not sid:
+            continue
+        try:
+            d = gql(
+                """query($e: String!, $s: String!) {
+                    service(id: $s) {
+                        domains(environmentId: $e) {
+                            edges { node { domain } }
+                        }
+                    }
+                }""",
+                {"e": env_id, "s": sid},
+            )
+            edges = d["data"]["service"]["domains"]["edges"]
+            if edges:
+                out[name] = f"https://{edges[0]['node']['domain']}"
+        except Exception as ex:
+            log(f"  ⚠️ دامنه‌ی {name}: {ex}")
+    return out
+
+
 def main():
     if not TOKEN:
         log("❌ RAILWAY_TOKEN ست نشده — bootstrap غیرفعال است")
@@ -162,6 +193,13 @@ def main():
     existing = list_services(pid)
     log(f"سرویس‌های موجود: {list(existing.keys())}")
 
+    # (service_id به اسم) — برای ثبت PANELS بعد از ساخت
+    created_ids = {}
+    self_service_id = os.environ.get("RAILWAY_SERVICE_ID", "")
+    if self_service_id:
+        created_ids["xui-nl"] = self_service_id  # سرویس اول معمولاً پنل اصلی است
+
+    domains = {}   # name -> https://domain
     for name, region in SERVICES:
         if name in existing:
             log(f"⏭ {name} از قبل هست — رد شد")
@@ -170,11 +208,13 @@ def main():
         svc_id = create_service(pid, name, region)
         if not svc_id:
             continue
+        created_ids[name] = svc_id
         if set_region(env_id, svc_id, region):
             log(f"  ✅ ریجن {region}")
         domain = create_domain(env_id, svc_id)
         if domain:
             log(f"  ✅ دامنه: https://{domain} (پورت {TARGET_PORT})")
+            domains[name] = f"https://{domain}"
         vol = create_volume(env_id, pid, svc_id, region)
         if vol:
             log(f"  ✅ ولوم: {vol} → {MOUNT_PATH}")
@@ -185,6 +225,39 @@ def main():
     self_region = os.environ.get("REGION_NAME", "")
     if self_region and env_id:
         set_region(env_id, os.environ.get("RAILWAY_SERVICE_ID", ""), self_region)
+
+    # ── ثبت PANELS + BOOTSTRAP_READY روی همه سرویس‌ها ──
+    # دامنه‌هایِ همین bootstrap (ساخته‌شده این اجرا) پیدا کنیم؛ اگر خالی بود
+    # یعنی سرویس‌ها از قبل ساخته شده‌اند — با کوئری دامنه‌ها را واکشی کن.
+    if len(domains) < len(SERVICES):
+        fetched = fetch_all_domains(env_id, created_ids)
+        domains.update(fetched)
+
+    if len(domains) < len(SERVICES):
+        log(f"⚠️ فقط {len(domains)}/{len(SERVICES)} دامنه پیدا شد — PANELS ناقص می‌ماند")
+    else:
+        panels_env = ";".join(f"{k}={v}" for k, v in domains.items())
+        log(f"🌍 PANELS = {panels_env}")
+        # نام پنل اصلی — همان سرویسی که این bootstrap روی آن اجرا می‌شود
+        main_name = os.environ.get("MAIN_PANEL", "xui-nl")
+        # روی همه سرویس‌ها ست کن (شامل سرویس‌هایی که همین الان ساخته شدند)
+        for name in SERVICES:
+            sid = created_ids.get(name)
+            if not sid:
+                sid = existing.get(name) or list_services(pid).get(name)
+            if not sid:
+                continue
+            # فقط پنل اصلی init را اجرا می‌کند (جلوگیری از race)
+            init_flag = "1" if name == main_name else "0"
+            ok, fails = set_variables(TOKEN, env_id, sid, {
+                "PANELS": panels_env,
+                "BOOTSTRAP_READY": "1",
+                "INIT_PANELS": init_flag,
+            })
+            if ok:
+                log(f"  ✅ PANELS ثبت شد روی {name} ({sid}) [init={init_flag}]")
+            else:
+                log(f"  ⚠️ {name}: " + "; ".join(fails))
 
     log("✅ bootstrap تمام شد")
     return 0
